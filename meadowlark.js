@@ -1,7 +1,7 @@
 var express = require('express');
 var app = express();
 app.set('port', process.env.port || 3000);
-
+// teshi
 // 设置handlerbars视图引擎
 var handlebars = require('express3-handlebars').create({
 	defaultLayout: 'main'
