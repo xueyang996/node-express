@@ -1,5 +1,6 @@
 var express = require('express');
 var formidable = require('formidable');
+var nodemailer = require('nodemailer');
 var jqupload = require('jquery-file-upload-middleware');
 var app = express();
 var fortune = require('./lib/fortune.js');
@@ -21,6 +22,23 @@ var handlebars = require('express3-handlebars').create({
 		}
 	}
 });
+var mailTransport = nodemailer.createTransport( {
+	host: 'smtp.qq.com',
+	auth: {
+		user: credentials.gmail.user,
+		pass: credentials.gmail.password,
+	}
+});
+mailTransport.sendMail({
+	from: credentials.gmail.user,
+	to: credentials.tomail,
+	subject: 'your meadowlark travel tour!!!',
+	text: 'Thank you for booking this email'
+}, function(err) {
+	if (err) {
+		console.error('unable to send email:' + err);
+	}
+})
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 // 静态文件设置
