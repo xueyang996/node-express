@@ -1,11 +1,12 @@
 var express = require('express');
 var formidable = require('formidable');
-var nodemailer = require('nodemailer');
 var jqupload = require('jquery-file-upload-middleware');
 var app = express();
 var fortune = require('./lib/fortune.js');
 var weather = require('./lib/weather');
+var Product = require('./lib/product');
 var credentials = require('./credentials.js');
+var emailService = require('./lib/email.js')(credentials);
 app.set('port', process.env.port || 3000);
 // teshi
 // 设置handlerbars视图引擎
@@ -22,23 +23,7 @@ var handlebars = require('express3-handlebars').create({
 		}
 	}
 });
-var mailTransport = nodemailer.createTransport( {
-	host: 'smtp.qq.com',
-	auth: {
-		user: credentials.gmail.user,
-		pass: credentials.gmail.password,
-	}
-});
-mailTransport.sendMail({
-	from: credentials.gmail.user,
-	to: credentials.tomail,
-	subject: 'your meadowlark travel tour!!!',
-	text: 'Thank you for booking this email'
-}, function(err) {
-	if (err) {
-		console.error('unable to send email:' + err);
-	}
-})
+
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 // 静态文件设置
@@ -58,7 +43,11 @@ app.use(function(req, res, next) {
 	res.locals.flash = req.session.flash;
 	delete req.session.flash;
 	next();
-})
+});
+var cartValidation = require('./lib/cartValidation.js');
+
+app.use(cartValidation.checkWaivers);
+app.use(cartValidation.checkGuestCounts);
 app.get('/', function(req, res) {
 	res.render('home');
 });
@@ -68,12 +57,12 @@ app.get('/about', function(req, res) {
 		pageTestScript: '/qa/tests-about.js'
 	});
 });
-app.get('/tours/hood-river', function(req, res) {
-	res.render('tours/hood-river');
-});
-app.get('/tours/oregon-coast', function(req, res) {
-	res.render('tours/oregon-coast');
-});
+// app.get('/tours/hood-river', function(req, res) {
+// 	res.render('tours/hood-river');
+// });
+// app.get('/tours/oregon-coast', function(req, res) {
+// 	res.render('tours/oregon-coast');
+// });
 app.get('/tours/request-group-rate', function(req, res) {
 	res.render('tours/request-group-rate');
 });
@@ -191,7 +180,100 @@ app.post('/newsletter', function(req, res) {
 });
 app.get('/newsletter/archive', function(req, res) {
 	res.render('newsletter/archive');
-})
+});
+
+app.post('/cart/add', function(req, res, next) {
+	var cart = req.session.cart || (req.session.cart = {
+		items: []
+	});
+	Product.findOne({
+		sku: req.body.sku
+	}, function(err, product) {
+		if (err) return next(err);
+		if (!product) return next(new Error('Unknown product SKU: ' + req.body.sku));
+		cart.items.push({
+			product: product,
+			guests: req.body.guests || 0,
+		});
+		res.redirect(303, '/cart');
+	});
+});
+app.get('/cart', function(req, res, next) {
+	var cart = req.session.cart;
+	if (!cart) next();
+	res.render('cart', {
+		cart: cart
+	});
+});
+app.get('/cart/checkout', function(req, res, next) {
+	var cart = req.session.cart;
+	if (!cart) next();
+	res.render('cart-checkout');
+});
+app.get('/cart/thank-you', function(req, res) {
+	res.render('cart-thank-you', {
+		cart: req.session.cart
+	});
+});
+app.get('/email/cart/thank-you', function(req, res) {
+	res.render('email/cart-thank-you', {
+		cart: req.session.cart,
+		layout: null
+	});
+});
+app.post('/cart/checkout', function(req, res) {
+	var cart = req.session.cart;
+	if (!cart) next(new Error('Cart does not exist.'));
+	var name = req.body.name || '',
+		email = req.body.email || '';
+	// input validation
+	if (!email.match(VALID_EMAIL_REGEX)) return res.next(new Error('Invalid email address.'));
+	// assign a random cart ID; normally we would use a database ID here
+	cart.number = Math.random().toString().replace(/^0\.0*/, '');
+	cart.billing = {
+		name: name,
+		email: email,
+	};
+	res.render('email/cart-thank-you', {
+		layout: null,
+		cart: cart
+	}, function(err, html) {
+		if (err) console.log('error in email template');
+		emailService.send(cart.billing.email,
+			'Thank you for booking your trip with Meadowlark Travel!',
+			html);
+	});
+	res.render('cart-thank-you', {
+		cart: cart
+	});
+});
+app.get('/tours/:tour', function(req, res, next) {
+	console.log('???????')
+	Product.findOne({
+		category: 'tour',
+		slug: req.params.tour
+	}, function(err, tour) {
+		console.log(err, tour, 'sdfdsf')
+		if (err) return next(err);
+		if (!tour) return next();
+		res.render('tour', {
+			tour: tour
+		});
+	});
+});
+app.get('/adventures/:subcat/:name', function(req, res, next) {
+	Product.findOne({
+		category: 'adventure',
+		slug: req.params.subcat + '/' + req.params.name
+	}, function(err, adventure) {
+		if (err) return next(err);
+		if (!adventure) return next();
+		res.render('adventure', {
+			adventure: adventure
+		});
+	});
+});
+
 // 404 catch-all处理器(中间件)
 app.use(function(req, res, next) {
 	res.status(404);

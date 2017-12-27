@@ -1,4 +1,4 @@
 node_modules
 .idea
-
+credentials.js
 public/uploads
